@@ -50,9 +50,9 @@ See `docker-compose.yaml` for complete list of configurable options.
 
 ## 📂 Volumes
 
-- `./rootfs/data/infisical` - Data storage
-- `./rootfs/config/infisical` - Data storage
-- `./rootfs/data/db/postgres/infisical` - Data storage
+- `./volumes/data/infisical` - Data storage
+- `./volumes/config/infisical` - Data storage
+- `./volumes/data/db/postgres/infisical` - Data storage
 
 ## 🔐 Security
 
