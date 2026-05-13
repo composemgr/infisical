@@ -16,6 +16,8 @@ services:
     logging: *default-logging
     networks:
       - infisical
+      - proxy
+      - cloudflare
     ports:
       - "172.17.0.1:8106:8080"
     environment:
@@ -26,6 +28,8 @@ services:
       DB_CONNECTION_URI: postgres://${DB_USER_NAME:-infisical}:${DB_USER_PASS:-changeme_db_password}@infisical-db:5432/${DB_CREATE_DATABASE_NAME:-infisical}
       REDIS_URL: redis://infisical-redis:6379
       SITE_URL: http://${BASE_HOST_NAME:-localhost}:8106
+      CONTAINER_NAME: infisical-app
+      HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
     volumes:
       - ./volumes/data/infisical:/data
       - ./volumes/config/infisical:/config
@@ -34,6 +38,22 @@ services:
         condition: service_healthy
       infisical-redis:
         condition: service_healthy
+    labels:
+      - 'traefik.enable=true'
+      - 'cloudflare.enable=true'
+      - 'traefik.docker.network=proxy'
+      - 'cloudflare.service=http://infisical-app:8080'
+      - 'cloudflare.hostname=infisical.${CLOUDFLARE_ZONE_NAME:-}'
+      - 'traefik.http.routers.infisical-app.entrypoints=http'
+      - 'traefik.http.routers.infisical-app-secure.tls=true'
+      - 'traefik.http.routers.infisical-app.rule=Host($(${BASE_HOST_NAME:-$HOSTNAME}))'
+      - 'traefik.http.middlewares.infisical-app-https-redirect.redirectscheme.scheme=https'
+      - 'traefik.http.routers.infisical-app.middlewares=infisical-app-https-redirect'
+      - 'traefik.http.routers.infisical-app-secure.entrypoints=https'
+      - 'traefik.http.routers.infisical-app-secure.rule=Host($(${BASE_HOST_NAME:-$HOSTNAME}))'
+      - 'traefik.http.routers.infisical-app-secure.tls.certresolver=cloudflare'
+      - 'traefik.http.routers.infisical-app-secure.service=infisical-app'
+      - 'traefik.http.services.infisical-app.loadbalancer.server.port=8080'
 
   infisical-db:
     image: postgres:latest
@@ -48,6 +68,7 @@ services:
       POSTGRES_DB: ${DB_CREATE_DATABASE_NAME:-infisical}
       POSTGRES_USER: ${DB_USER_NAME:-infisical}
       POSTGRES_PASSWORD: ${DB_USER_PASS:-changeme_db_password}
+      CONTAINER_NAME: infisical-db
     volumes:
       - ./volumes/data/db/postgres/infisical:/var/lib/postgresql/data
     healthcheck:
@@ -66,6 +87,7 @@ services:
       - infisical
     environment:
       TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: infisical-redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -76,3 +98,7 @@ networks:
   infisical:
     name: infisical
     external: false
+  proxy:
+    external: true
+  cloudflare:
+    external: true
