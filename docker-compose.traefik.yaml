@@ -1,0 +1,97 @@
+name: infisical
+x-logging: &default-logging
+  options:
+    max-size: '5m'
+    max-file: '1'
+  driver: json-file
+
+services:
+  infisical:
+    image: infisical/infisical:latest
+    container_name: infisical-app
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
+    hostname: ${BASE_HOST_NAME:-$HOSTNAME}
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-America/New_York}
+      NODE_ENV: production
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-changeme_secret_key_min_32_chars}
+      AUTH_SECRET: ${APP_SECRET_KEY:-changeme_secret_key_min_32_chars}
+      DB_CONNECTION_URI: postgres://${DB_USER_NAME:-infisical}:${DB_USER_PASS:-changeme_db_password}@infisical-db:5432/${DB_CREATE_DATABASE_NAME:-infisical}
+      REDIS_URL: redis://infisical-redis:6379
+      SITE_URL: http://${BASE_HOST_NAME:-$HOSTNAME}:64209
+      CONTAINER_NAME: infisical-app
+      HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
+    volumes:
+      - './volumes/data/infisical:/data:z'
+    depends_on:
+      infisical-db:
+        condition: service_healthy
+      infisical-redis:
+        condition: service_healthy
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=traefik'
+      - 'traefik.http.routers.infisical.entrypoints=http'
+      - 'traefik.http.routers.infisical.rule=Host(`${BASE_HOST_NAME:-$HOSTNAME}`)'
+      - 'traefik.http.routers.infisical.middlewares=infisical-https-redirect'
+      - 'traefik.http.middlewares.infisical-https-redirect.redirectscheme.scheme=https'
+      - 'traefik.http.routers.infisical-secure.entrypoints=https'
+      - 'traefik.http.routers.infisical-secure.rule=Host(`${BASE_HOST_NAME:-$HOSTNAME}`)'
+      - 'traefik.http.routers.infisical-secure.tls.certresolver=cloudflare'
+      - 'traefik.http.routers.infisical-secure.service=infisical'
+      - 'traefik.http.services.infisical.loadbalancer.server.port=8080'
+    networks:
+      - infisical
+      - traefik
+  infisical-db:
+    image: postgres:16-alpine
+    container_name: infisical-db
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
+    hostname: infisical-db
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-America/New_York}
+      POSTGRES_DB: ${DB_CREATE_DATABASE_NAME:-infisical}
+      POSTGRES_USER: ${DB_USER_NAME:-infisical}
+      POSTGRES_PASSWORD: ${DB_USER_PASS:-changeme_db_password}
+      CONTAINER_NAME: infisical-db
+    volumes:
+      - './volumes/db/postgres/infisical:/var/lib/postgresql/data:z'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infisical
+
+  infisical-redis:
+    image: redis:alpine
+    container_name: infisical-redis
+    domainname: ${BASE_DOMAIN_NAME:-example.com}
+    hostname: infisical-redis
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    environment:
+      TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: infisical-redis
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infisical
+
+networks:
+  infisical:
+    name: infisical
+    external: false
+  traefik:
+    external: true
